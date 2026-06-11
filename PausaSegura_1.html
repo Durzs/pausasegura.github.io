@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pausa Segura — Demo interactiva</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script>window.react = window.React;</script><!-- lucide-react UMD espera el global "react" -->
+<script crossorigin src="https://unpkg.com/lucide-react@0.383.0/dist/umd/lucide-react.js"></script>
+<script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+const {
+  Shield, ShieldCheck, PhoneIncoming, PhoneOff, Phone, MessageSquare,
+  AlertTriangle, CheckCircle2, Flag, Users, Lightbulb, ChevronLeft,
+  HeartHandshake, Send, Volume2, VolumeX
+} = LucideReact;
+// Tone ya es global (UMD)
+
+
+/* ============================================================
+   PAUSA SEGURA — Demo de pitch con flujo animado
+   · Onboarding con dos simulaciones: llamada y mensaje
+   · Camino social: "Pedir ayuda a un familiar"
+   · Momento de bloqueo cinematográfico (escudo que se dibuja)
+   · Transiciones direccionales con curva tipo spring
+   · Contador animado del efecto de red
+   Accesibilidad: texto ≥19px, botones ≥56px, alto contraste,
+   color + texto siempre, prefers-reduced-motion respetado.
+   Estado en memoria (useState). Sin localStorage.
+   ============================================================ */
+
+const T = {
+  tinta: "#15232C",
+  tintaSuave: "#46585F",
+  fondo: "#FBFCFB",
+  fondoSuave: "#F1F6F4",
+  acento: "#0C6E62",
+  acentoOscuro: "#084F46",
+  acentoGrad: "linear-gradient(180deg, #0E7A6D 0%, #0A5C51 100%)",
+  peligro: "#B3261E",
+  peligroGrad: "linear-gradient(180deg, #C42B20 0%, #9E1B14 100%)",
+  peligroFondo: "#FBEAE8",
+  cuidado: "#5F4900",
+  cuidadoFondo: "#FFF3C8",
+  ok: "#0E7A3D",
+  okGrad: "linear-gradient(180deg, #15914B 0%, #0B6630 100%)",
+  okFondo: "#E9F5EE",
+  borde: "#D4DEDA",
+  sombraCard: "0 2px 10px rgba(21,35,44,0.08)",
+};
+
+const F_APP = "'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif";
+const F_DEMO = "'Sora', 'Segoe UI', system-ui, sans-serif";
+
+const NUM_ESTAFA = "+56 9 4421 8137";
+const ENLACE_FALSO = "banco‑seguro‑chile.com";
+
+const CONTACTOS = [
+  { id: "carmen", nombre: "Carmen", relacion: "tu hija", inicial: "C", color: "#7C3AED" },
+  { id: "mateo", nombre: "Mateo", relacion: "tu nieto", inicial: "M", color: "#0B57D0" },
+];
+
+const reduceMotion = () =>
+  typeof window !== "undefined" &&
+  window.matchMedia &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------------- UI básica ---------------- */
+
+function BotonGrande({ children, onClick, variante = "principal", icono: Icono, deshabilitado = false }) {
+  const estilos = {
+    principal: { background: T.acentoGrad, color: "#FFF", border: "none", boxShadow: "0 3px 10px rgba(12,110,98,0.35)" },
+    seguro: { background: T.okGrad, color: "#FFF", border: "none", boxShadow: "0 3px 10px rgba(14,122,61,0.35)" },
+    peligro: { background: T.peligroGrad, color: "#FFF", border: "none", boxShadow: "0 3px 10px rgba(179,38,30,0.35)" },
+    secundario: { background: "#FFF", color: T.acentoOscuro, border: "3px solid " + T.acento, boxShadow: T.sombraCard },
+    discreto: { background: "#FFF", color: T.tintaSuave, border: "2px solid " + T.borde, boxShadow: "none" },
+  }[variante];
+
+  return (
+    <button
+      onClick={deshabilitado ? undefined : onClick}
+      disabled={deshabilitado}
+      className="ps-boton"
+      style={{
+        ...estilos,
+        width: "100%",
+        minHeight: variante === "discreto" ? 56 : 64,
+        borderRadius: 16,
+        fontSize: variante === "discreto" ? 20 : 22,
+        fontWeight: 700,
+        fontFamily: F_APP,
+        cursor: deshabilitado ? "not-allowed" : "pointer",
+        opacity: deshabilitado ? 0.45 : 1,
+        padding: "12px 16px",
+        lineHeight: 1.25,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+      }}
+    >
+      {Icono && <Icono size={26} strokeWidth={2.4} aria-hidden="true" />}
+      <span>{children}</span>
+    </button>
+  );
+}
+
+function Tarjeta({ children, tono = "neutra", style, className }) {
+  const tonos = {
+    neutra: { background: "#FFF", border: "2px solid " + T.borde },
+    ok: { background: T.okFondo, border: "3px solid " + T.ok },
+    peligro: { background: T.peligroFondo, border: "2px solid " + T.peligro },
+    cuidado: { background: T.cuidadoFondo, border: "2px solid #C9A227" },
+    suave: { background: T.fondoSuave, border: "2px solid " + T.borde },
+  }[tono];
+  return (
+    <div className={className} style={{ ...tonos, borderRadius: 16, padding: 16, boxShadow: T.sombraCard, ...style }}>
+      {children}
+    </div>
+  );
+}
+
+function Progreso({ paso, titulo }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", background: T.fondoSuave, borderBottom: "2px solid " + T.borde }}>
+      <span style={{ fontSize: 19, fontWeight: 700, color: T.tintaSuave }}>
+        {titulo} · Paso {paso} de 3
+      </span>
+      <span style={{ display: "flex", gap: 6 }} aria-hidden="true">
+        {[1, 2, 3].map((n) => (
+          <span
+            key={n}
+            style={{
+              width: n === paso ? 26 : 10,
+              height: 10,
+              borderRadius: 999,
+              background: n <= paso ? T.acento : T.borde,
+              transition: "width .35s cubic-bezier(.22,1.2,.36,1), background .25s ease",
+            }}
+          />
+        ))}
+      </span>
+    </div>
+  );
+}
+
+/* Contador animado para el efecto de red */
+function ContadorRed({ objetivo }) {
+  const [valor, setValor] = useState(reduceMotion() ? objetivo : Math.max(0, objetivo - 60));
+  useEffect(() => {
+    if (reduceMotion()) return;
+    const inicio = performance.now();
+    const desde = Math.max(0, objetivo - 60);
+    const dur = 1100;
+    let raf;
+    const tick = (t) => {
+      const p = Math.min(1, (t - inicio) / dur);
+      const suave = 1 - Math.pow(1 - p, 3); // ease-out cúbico
+      setValor(Math.round(desde + (objetivo - desde) * suave));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [objetivo]);
+  return <>{valor.toLocaleString("es-CL")}</>;
+}
+
+/* Escudo SVG que se dibuja (momento de bloqueo) */
+function EscudoAnimado() {
+  return (
+    <svg width="150" height="164" viewBox="0 0 100 110" fill="none" aria-hidden="true">
+      <path
+        className="ps-draw-escudo"
+        d="M50 6 L90 22 V52 C90 80 72 98 50 106 C28 98 10 80 10 52 V22 Z"
+        stroke="#FFFFFF"
+        strokeWidth="5"
+        strokeLinejoin="round"
+      />
+      <path
+        className="ps-draw-check"
+        d="M31 56 L45 70 L71 40"
+        stroke="#7CF5C8"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function Franja({ fondo, colorTexto, icono: Icono, titulo, subtitulo, vibrar }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        background: fondo,
+        color: colorTexto,
+        padding: "24px 18px 20px",
+        textAlign: "center",
+        boxShadow: "inset 0 -4px 0 rgba(0,0,0,0.18)",
+      }}
+    >
+      <span style={{ position: "relative", display: "inline-flex", padding: 14 }}>
+        {vibrar && (
+          <>
+            <span className="ps-onda" style={{ animationDelay: "0s" }} />
+            <span className="ps-onda" style={{ animationDelay: "0.6s" }} />
+            <span className="ps-onda" style={{ animationDelay: "1.2s" }} />
+          </>
+        )}
+        <span className={vibrar ? "ps-vibrar" : ""} style={{ display: "inline-flex" }}>
+          <Icono size={58} strokeWidth={2.2} aria-hidden="true" />
+        </span>
+      </span>
+      <div style={{ fontSize: 26, fontWeight: 800, marginTop: 8, letterSpacing: -0.3 }}>{titulo}</div>
+      <div style={{ fontSize: 21, marginTop: 6, opacity: 0.95 }}>{subtitulo}</div>
+    </div>
+  );
+}
+
+/* ============================================================ */
+
+function PausaSeguraFlow() {
+  const [pantalla, setPantalla] = useState("inicio");
+  const [dir, setDir] = useState("fwd"); // fwd | back
+  const [protegidas, setProtegidas] = useState(1240); // CIFRA DE EJEMPLO
+  const [origen, setOrigen] = useState("llamada"); // de dónde viene el camino familiar
+  const [contacto, setContacto] = useState(CONTACTOS[0]);
+  const [sonido, setSonido] = useState(true); // tono de alerta audible
+  const audioRef = useRef({ synth: null, loop: null, voz: null });
+
+  /* --- Voz: anuncia el peligro en español (síntesis del navegador) --- */
+  const elegirVozEs = () => {
+    const voces = window.speechSynthesis?.getVoices?.() || [];
+    return (
+      voces.find((v) => v.lang === "es-CL") ||
+      voces.find((v) => v.lang && v.lang.startsWith("es")) ||
+      null
+    );
+  };
+
+  const hablar = (texto) => {
+    if (!window.speechSynthesis) return;
+    const u = new SpeechSynthesisUtterance(texto);
+    const voz = elegirVozEs();
+    if (voz) u.voice = voz;
+    u.lang = (voz && voz.lang) || "es-CL";
+    u.rate = 0.95;
+    window.speechSynthesis.speak(u);
+  };
+
+  const hablarAlerta = () => hablar("¡Peligro! Posible estafa.");
+
+  /* --- Tono de alerta: tritono urgente en loop (Tone.js) --- */
+  const detenerTonoPeligro = () => {
+    const a = audioRef.current;
+    if (a.voz) clearInterval(a.voz);
+    if (a.loop) a.loop.dispose();
+    if (a.synth) a.synth.dispose();
+    try {
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+    } catch (e) {}
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    audioRef.current = { synth: null, loop: null, voz: null };
+  };
+
+  const iniciarTonoPeligro = async (forzar = false) => {
+    if (!sonido && !forzar) return;
+    try {
+      await Tone.start(); // requiere gesto del usuario: el clic del botón lo es
+      detenerTonoPeligro();
+      const synth = new Tone.Synth({
+        oscillator: { type: "triangle" },
+        envelope: { attack: 0.005, decay: 0.12, sustain: 0.15, release: 0.08 },
+      }).toDestination();
+      synth.volume.value = -10; // volumen moderado: alerta, no sobresalto
+      const loop = new Tone.Loop((time) => {
+        // sol–mi♭–sol: intervalo disonante, reconocible como "alarma"
+        synth.triggerAttackRelease("G5", "16n", time);
+        synth.triggerAttackRelease("Eb5", "16n", time + 0.18);
+        synth.triggerAttackRelease("G5", "16n", time + 0.36);
+      }, 1.15).start(0);
+      Tone.Transport.start();
+      hablarAlerta();
+      const voz = setInterval(hablarAlerta, 3400);
+      audioRef.current = { synth, loop, voz };
+    } catch (e) {
+      /* audio no disponible: la alerta visual y textual siguen funcionando */
+    }
+  };
+
+  /* --- Chime de éxito al bloquear (sincronizado con el escudo) --- */
+  const chimeBloqueo = () => {
+    if (!sonido) return;
+    try {
+      const s = new Tone.Synth({ oscillator: { type: "sine" } }).toDestination();
+      s.volume.value = -8;
+      const t = Tone.now();
+      const d = reduceMotion() ? 0.1 : 0.85; // coincide con el trazo del check
+      s.triggerAttackRelease("C5", "8n", t + d);
+      s.triggerAttackRelease("G5", "4n", t + d + 0.2);
+      setTimeout(() => s.dispose(), 3000);
+    } catch (e) {}
+  };
+
+  /* El tono solo suena mientras está visible la llamada entrante.
+     (mensaje-2 maneja su propia voz: no se cancela aquí) */
+  useEffect(() => {
+    if (pantalla !== "llamada-1" && pantalla !== "mensaje-2") detenerTonoPeligro();
+    return detenerTonoPeligro;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pantalla]);
+
+  /* --- Pausa deliberativa de 7 s en el flujo de mensaje --- */
+  const [cuenta, setCuenta] = useState(7);
+  useEffect(() => {
+    if (pantalla !== "mensaje-2") return;
+    setCuenta(7);
+    let v;
+    if (sonido) {
+      v = setTimeout(
+        () => hablar("¡Cuidado! Enlace peligroso. Respira. Tienes siete segundos para decidir con calma."),
+        250
+      );
+    }
+    const int = setInterval(() => setCuenta((c) => Math.max(0, c - 1)), 1000);
+    return () => {
+      clearInterval(int);
+      clearTimeout(v);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pantalla]);
+
+  /* Silenciar detiene todo de inmediato */
+  useEffect(() => {
+    if (!sonido) detenerTonoPeligro();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sonido]);
+
+  const ir = (p, d = "fwd") => {
+    setDir(d);
+    setPantalla(p);
+  };
+
+  const reportar = (destino) => {
+    setProtegidas((n) => n + 1);
+    ir(destino);
+  };
+
+  /* Interstitial de bloqueo: avanza solo tras la animación (+ voz de calma) */
+  useEffect(() => {
+    const espera = reduceMotion() ? 500 : 1900;
+    let t, v;
+    if (pantalla === "bloqueo-llamada") {
+      t = setTimeout(() => ir("llamada-2"), espera);
+      if (sonido) v = setTimeout(() => hablar("Llamada bloqueada. Estás a salvo."), 300);
+    }
+    if (pantalla === "bloqueo-mensaje") {
+      t = setTimeout(() => reportar("mensaje-3"), espera);
+      if (sonido) v = setTimeout(() => hablar("Enlace bloqueado. Estás a salvo."), 300);
+    }
+    return () => {
+      clearTimeout(t);
+      clearTimeout(v);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pantalla]);
+
+  /* ============================ Pantallas ============================ */
+
+  const pantallas = {
+    /* ---------- INICIO / ONBOARDING ---------- */
+    inicio: (
+      <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 16, height: "100%", justifyContent: "center" }}>
+        <div style={{ textAlign: "center" }} className="ps-stagger" data-i="1">
+          <span
+            style={{
+              width: 76, height: 76, borderRadius: 22, background: T.acentoGrad,
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              color: "#FFF", boxShadow: "0 6px 18px rgba(12,110,98,0.4)",
+            }}
+            aria-hidden="true"
+          >
+            <Shield size={44} strokeWidth={2.2} />
+          </span>
+          <h1 style={{ fontSize: 30, margin: "14px 0 0", color: T.acentoOscuro, letterSpacing: -0.5 }}>
+            Pausa Segura
+          </h1>
+          <p style={{ fontSize: 21, margin: "8px 0 0", color: T.tintaSuave }}>
+            Te ayuda a detenerte antes de caer en una estafa.
+          </p>
+        </div>
+
+        <Tarjeta tono="suave" className="ps-stagger" data-i="2">
+          <p style={{ fontSize: 19, margin: 0, color: T.tinta, display: "flex", gap: 10 }}>
+            <Users size={26} color={T.acento} strokeWidth={2.4} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>
+              Cuando otras personas reportan un número o un enlace, la app{" "}
+              <strong>te avisa antes</strong> de que contestes o lo abras.
+            </span>
+          </p>
+        </Tarjeta>
+
+        <p className="ps-stagger" data-i="3" style={{ fontSize: 21, margin: "2px 0 0", color: T.tinta, fontWeight: 700, textAlign: "center" }}>
+          Prueba cómo funciona:
+        </p>
+
+        <div className="ps-stagger" data-i="4" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <BotonGrande
+            variante="peligro"
+            icono={PhoneIncoming}
+            onClick={() => {
+              iniciarTonoPeligro();
+              ir("llamada-1");
+            }}
+          >
+            Simular llamada de estafa
+          </BotonGrande>
+          <BotonGrande icono={MessageSquare} onClick={() => ir("mensaje-1")}>
+            Simular mensaje con enlace falso
+          </BotonGrande>
+        </div>
+      </div>
+    ),
+
+    /* ================= FLUJO A · LLAMADA ================= */
+
+    "llamada-1": (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <Progreso paso={1} titulo="Llamada" />
+        <Franja
+          fondo={T.peligroGrad}
+          colorTexto="#FFF"
+          icono={PhoneIncoming}
+          titulo="Llamada peligrosa"
+          subtitulo="Reportada como estafa por otros usuarios"
+          vibrar
+        />
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14, flex: 1, justifyContent: "center" }}>
+          <p style={{ fontSize: 19, margin: 0, color: T.tintaSuave, textAlign: "center" }}>Te está llamando:</p>
+          <p style={{ fontSize: 30, fontWeight: 800, margin: 0, color: T.tinta, textAlign: "center", letterSpacing: 1 }}>
+            {NUM_ESTAFA}
+          </p>
+
+          {/* Equivalente textual del anuncio sonoro (accesibilidad multimodal) */}
+          <p
+            style={{
+              fontSize: 19,
+              margin: 0,
+              color: T.peligro,
+              fontWeight: 700,
+              textAlign: "center",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+            }}
+          >
+            {sonido ? (
+              <Volume2 size={24} strokeWidth={2.4} aria-hidden="true" className="ps-vibrar" />
+            ) : (
+              <VolumeX size={24} strokeWidth={2.4} aria-hidden="true" />
+            )}
+            <span>
+              {sonido ? "El teléfono anuncia: «¡Peligro! Posible estafa»" : "Tono de alerta silenciado"}
+            </span>
+          </p>
+
+          <BotonGrande
+            variante="seguro"
+            icono={PhoneOff}
+            onClick={() => {
+              detenerTonoPeligro();
+              chimeBloqueo();
+              ir("bloqueo-llamada");
+            }}
+          >
+            Colgar (opción segura)
+          </BotonGrande>
+          <BotonGrande
+            variante="secundario"
+            icono={HeartHandshake}
+            onClick={() => {
+              setOrigen("llamada");
+              ir("familiar-1");
+            }}
+          >
+            Pedir ayuda a un familiar
+          </BotonGrande>
+          <BotonGrande variante="discreto" icono={Phone} onClick={() => ir("llamada-2")}>
+            Contestar igual
+          </BotonGrande>
+          <BotonGrande
+            variante="discreto"
+            icono={sonido ? VolumeX : Volume2}
+            onClick={() => {
+              if (sonido) {
+                setSonido(false);
+              } else {
+                setSonido(true);
+                iniciarTonoPeligro(true);
+              }
+            }}
+          >
+            {sonido ? "Silenciar tono de alerta" : "Activar tono de alerta"}
+          </BotonGrande>
+        </div>
+      </div>
+    ),
+
+    /* Interstitial — momento de bloqueo (llamada) */
+    "bloqueo-llamada": (
+      <div className="ps-bloqueo" role="status" aria-live="polite">
+        <EscudoAnimado />
+        <p className="ps-bloqueo-texto" style={{ fontSize: 27, fontWeight: 800, margin: "18px 0 0" }}>
+          Llamada bloqueada
+        </p>
+        <p className="ps-bloqueo-texto" style={{ fontSize: 21, margin: "8px 0 0", opacity: 0.9 }}>
+          Estás a salvo
+        </p>
+      </div>
+    ),
+
+    "llamada-2": (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <Progreso paso={2} titulo="Llamada" />
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, flex: 1, justifyContent: "center", textAlign: "center" }}>
+          <span className="ps-stagger" data-i="1" style={{ alignSelf: "center", color: T.ok }} aria-hidden="true">
+            <ShieldCheck size={72} strokeWidth={2} />
+          </span>
+          <h1 className="ps-stagger" data-i="2" style={{ fontSize: 26, margin: 0, color: T.ok, letterSpacing: -0.3 }}>
+            Llamada terminada
+          </h1>
+          <p className="ps-stagger" data-i="2" style={{ fontSize: 22, margin: 0, color: T.tinta }}>
+            No entregaste ningún dato.
+          </p>
+          <Tarjeta tono="suave" className="ps-stagger" style={{ textAlign: "center" }} data-i="3">
+            <p style={{ fontSize: 19, margin: 0, color: T.tintaSuave }}>Número:</p>
+            <p style={{ fontSize: 25, fontWeight: 800, margin: "4px 0 0", color: T.tinta, letterSpacing: 1 }}>
+              {NUM_ESTAFA}
+            </p>
+          </Tarjeta>
+          <div className="ps-stagger" data-i="4" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <BotonGrande variante="peligro" icono={Flag} onClick={() => reportar("llamada-3")}>
+              Reportar este número como estafa
+            </BotonGrande>
+            <p style={{ fontSize: 19, margin: 0, color: T.tintaSuave }}>Un solo toque. Sin formularios.</p>
+          </div>
+        </div>
+      </div>
+    ),
+
+    "llamada-3": (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <Progreso paso={3} titulo="Llamada" />
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, flex: 1, justifyContent: "center", textAlign: "center" }}>
+          <span className="ps-pop" style={{ alignSelf: "center", color: T.ok }} aria-hidden="true">
+            <CheckCircle2 size={80} strokeWidth={2} />
+          </span>
+          <h1 className="ps-stagger" data-i="2" style={{ fontSize: 27, margin: 0, color: T.ok, letterSpacing: -0.3 }}>¡Gracias!</h1>
+          <p className="ps-stagger" data-i="2" style={{ fontSize: 22, margin: 0, color: T.tinta }}>
+            Tu aviso le enseñó a la app a reconocer este número.
+          </p>
+          <Tarjeta tono="ok" className="ps-stagger" data-i="3">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: T.ok }}>
+              <Users size={30} strokeWidth={2.4} aria-hidden="true" />
+              <span style={{ fontSize: 46, fontWeight: 800, lineHeight: 1.1 }}>
+                <ContadorRed objetivo={protegidas} />
+              </span>
+            </div>
+            <div style={{ fontSize: 21, color: T.tinta, marginTop: 4 }}>
+              personas ahora están protegidas de este número
+            </div>
+            <div style={{ fontSize: 19, color: T.tintaSuave, marginTop: 6, fontStyle: "italic" }}>
+              (cifra de ejemplo para la demo)
+            </div>
+          </Tarjeta>
+          <div className="ps-stagger" data-i="4">
+            <BotonGrande icono={ChevronLeft} onClick={() => ir("inicio", "back")}>
+              Volver al inicio
+            </BotonGrande>
+          </div>
+        </div>
+      </div>
+    ),
+
+    /* ================= CAMINO SOCIAL · FAMILIAR ================= */
+
+    "familiar-1": (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <Progreso paso={2} titulo="Pedir ayuda" />
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14, flex: 1, justifyContent: "center" }}>
+          <span className="ps-stagger" data-i="1" style={{ alignSelf: "center", color: T.acento }} aria-hidden="true">
+            <HeartHandshake size={64} strokeWidth={2} />
+          </span>
+          <h1 className="ps-stagger" data-i="1" style={{ fontSize: 26, margin: 0, color: T.acentoOscuro, textAlign: "center", letterSpacing: -0.3 }}>
+            ¿A quién le avisamos?
+          </h1>
+          <p className="ps-stagger" data-i="2" style={{ fontSize: 21, margin: 0, color: T.tinta, textAlign: "center" }}>
+            Le enviaremos un mensaje con el {origen === "llamada" ? "número" : "enlace"} para que te ayude a decidir.
+          </p>
+
+          {CONTACTOS.map((c, i) => (
+            <button
+              key={c.id}
+              className="ps-boton ps-stagger"
+              data-i={3 + i}
+              onClick={() => {
+                setContacto(c);
+                ir("familiar-2");
+              }}
+              style={{
+                width: "100%",
+                minHeight: 72,
+                borderRadius: 16,
+                background: "#FFF",
+                border: "2px solid " + T.borde,
+                boxShadow: T.sombraCard,
+                cursor: "pointer",
+                fontFamily: F_APP,
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                padding: "12px 16px",
+                textAlign: "left",
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 52, height: 52, borderRadius: "50%", background: c.color, color: "#FFF",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 26, fontWeight: 800, flexShrink: 0,
+                }}
+              >
+                {c.inicial}
+              </span>
+              <span>
+                <span style={{ display: "block", fontSize: 23, fontWeight: 800, color: T.tinta }}>{c.nombre}</span>
+                <span style={{ display: "block", fontSize: 19, color: T.tintaSuave }}>{c.relacion}</span>
+              </span>
+            </button>
+          ))}
+
+          <div className="ps-stagger" data-i="5">
+            <BotonGrande
+              variante="discreto"
+              icono={ChevronLeft}
+              onClick={() => ir(origen === "llamada" ? "llamada-1" : "mensaje-2", "back")}
+            >
+              Volver atrás
+            </BotonGrande>
+          </div>
+        </div>
+      </div>
+    ),
+
+    "familiar-2": (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <Progreso paso={3} titulo="Pedir ayuda" />
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, flex: 1, justifyContent: "center", textAlign: "center" }}>
+          <span className="ps-volar" style={{ alignSelf: "center", color: T.acento }} aria-hidden="true">
+            <Send size={64} strokeWidth={2} />
+          </span>
+          <h1 className="ps-stagger" data-i="2" style={{ fontSize: 26, margin: 0, color: T.acentoOscuro, letterSpacing: -0.3 }}>
+            Le avisamos a {contacto.nombre}
+          </h1>
+
+          {/* Burbuja del mensaje enviado */}
+          <div
+            className="ps-stagger"
+            data-i="3"
+            style={{
+              background: T.acentoGrad,
+              color: "#FFF",
+              borderRadius: "18px 18px 4px 18px",
+              padding: 16,
+              textAlign: "left",
+              boxShadow: "0 3px 10px rgba(12,110,98,0.3)",
+            }}
+          >
+            <p style={{ fontSize: 20, margin: 0, lineHeight: 1.45 }}>
+              «{contacto.nombre}, me {origen === "llamada" ? "llamó un número" : "llegó un enlace"} sospechoso:{" "}
+              <strong>{origen === "llamada" ? NUM_ESTAFA : ENLACE_FALSO}</strong>. ¿Me ayudas a revisarlo?»
+            </p>
+            <p style={{ fontSize: 17, margin: "8px 0 0", opacity: 0.85 }}>Enviado ahora ✓✓</p>
+          </div>
+
+          <Tarjeta tono="ok" className="ps-stagger" data-i="4">
+            <p style={{ fontSize: 21, margin: 0, color: T.tinta, display: "flex", gap: 10, textAlign: "left" }}>
+              <ShieldCheck size={28} color={T.ok} strokeWidth={2.4} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>
+                Mientras tanto, el {origen === "llamada" ? "número" : "enlace"} queda{" "}
+                <strong>bloqueado</strong>. {contacto.nombre} te ayudará a decidir.
+              </span>
+            </p>
+          </Tarjeta>
+
+          <div className="ps-stagger" data-i="5">
+            <BotonGrande icono={ChevronLeft} onClick={() => ir("inicio", "back")}>
+              Volver al inicio
+            </BotonGrande>
+          </div>
+        </div>
+      </div>
+    ),
+
+    /* ================= FLUJO B · MENSAJE ================= */
+
+    "mensaje-1": (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <Progreso paso={1} titulo="Mensaje" />
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, flex: 1, justifyContent: "center" }}>
+          <p className="ps-stagger" data-i="1" style={{ fontSize: 19, margin: 0, color: T.tintaSuave, textAlign: "center" }}>
+            Recibiste un mensaje nuevo:
+          </p>
+
+          <div
+            className="ps-stagger"
+            data-i="2"
+            style={{
+              background: "#FFF",
+              border: "2px solid " + T.borde,
+              borderRadius: "18px 18px 18px 4px",
+              padding: 16,
+              boxShadow: T.sombraCard,
+            }}
+          >
+            <p style={{ fontSize: 19, margin: "0 0 8px", color: T.tintaSuave, fontWeight: 700 }}>
+              Remitente desconocido
+            </p>
+            <p style={{ fontSize: 21, margin: 0, color: T.tinta, lineHeight: 1.45 }}>
+              Su cuenta será bloqueada hoy. Verifique sus datos aquí:{" "}
+              <span style={{ color: "#0B57D0", textDecoration: "underline", wordBreak: "break-all" }}>
+                {ENLACE_FALSO}
+              </span>
+            </p>
+          </div>
+
+          <div className="ps-stagger" data-i="3" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <BotonGrande variante="peligro" icono={AlertTriangle} onClick={() => ir("mensaje-2")}>
+              Tocar el enlace
+            </BotonGrande>
+            <BotonGrande variante="discreto" icono={ChevronLeft} onClick={() => ir("inicio", "back")}>
+              Volver al inicio
+            </BotonGrande>
+          </div>
+        </div>
+      </div>
+    ),
+
+    "mensaje-2": (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <Progreso paso={2} titulo="Mensaje" />
+        <Franja
+          fondo={T.peligroGrad}
+          colorTexto="#FFF"
+          icono={AlertTriangle}
+          titulo="Enlace peligroso"
+          subtitulo="Reportado como estafa por otros usuarios"
+          vibrar
+        />
+        <div style={{ padding: "14px 20px 16px", display: "flex", flexDirection: "column", gap: 12, flex: 1, justifyContent: "center" }}>
+          {/* Pausa deliberativa de 7 s: el corazón del producto */}
+          <div aria-live="polite" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <span
+              style={{
+                width: 84, height: 84, borderRadius: "50%",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                border: "5px solid " + (cuenta > 0 ? T.peligro : T.ok),
+                background: cuenta > 0 ? T.peligroFondo : T.okFondo,
+                color: cuenta > 0 ? T.peligro : T.ok,
+                fontSize: 40, fontWeight: 800,
+                transition: "border-color .3s ease, background .3s ease, color .3s ease",
+              }}
+            >
+              {cuenta > 0 ? cuenta : <CheckCircle2 size={44} strokeWidth={2.4} aria-hidden="true" />}
+            </span>
+            <p style={{ fontSize: 19, fontWeight: 700, margin: 0, color: cuenta > 0 ? T.peligro : T.ok, display: "flex", alignItems: "center", gap: 8 }}>
+              {sonido && cuenta > 0 && <Volume2 size={22} strokeWidth={2.4} aria-hidden="true" className="ps-vibrar" />}
+              <span>{cuenta > 0 ? "Pausa de seguridad: respira" : "Ahora decide con calma"}</span>
+            </p>
+          </div>
+          <Tarjeta tono="cuidado">
+            <p style={{ fontSize: 21, margin: 0, color: T.cuidado, display: "flex", gap: 10 }}>
+              <Lightbulb size={26} strokeWidth={2.4} aria-hidden="true" style={{ flexShrink: 0 }} />
+              <span>Tu banco <strong>nunca te pedirá tus claves</strong> por mensaje.</span>
+            </p>
+          </Tarjeta>
+          <BotonGrande
+            variante="seguro"
+            icono={ShieldCheck}
+            onClick={() => {
+              chimeBloqueo();
+              ir("bloqueo-mensaje");
+            }}
+          >
+            Volver a salvo
+          </BotonGrande>
+          <BotonGrande
+            variante="secundario"
+            icono={HeartHandshake}
+            onClick={() => {
+              setOrigen("mensaje");
+              ir("familiar-1");
+            }}
+          >
+            Pedir ayuda a un familiar
+          </BotonGrande>
+          <BotonGrande variante="discreto" deshabilitado={cuenta > 0} onClick={() => ir("mensaje-1", "back")}>
+            {cuenta > 0 ? "Abrir igual · espera " + cuenta + " s" : "Abrir igual (no recomendado)"}
+          </BotonGrande>
+        </div>
+      </div>
+    ),
+
+    /* Interstitial — momento de bloqueo (mensaje) */
+    "bloqueo-mensaje": (
+      <div className="ps-bloqueo" role="status" aria-live="polite">
+        <EscudoAnimado />
+        <p className="ps-bloqueo-texto" style={{ fontSize: 27, fontWeight: 800, margin: "18px 0 0" }}>
+          Enlace bloqueado
+        </p>
+        <p className="ps-bloqueo-texto" style={{ fontSize: 21, margin: "8px 0 0", opacity: 0.9 }}>
+          Estás a salvo
+        </p>
+      </div>
+    ),
+
+    "mensaje-3": (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <Progreso paso={3} titulo="Mensaje" />
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, flex: 1, justifyContent: "center", textAlign: "center" }}>
+          <span className="ps-pop" style={{ alignSelf: "center", color: T.ok }} aria-hidden="true">
+            <ShieldCheck size={80} strokeWidth={2} />
+          </span>
+          <h1 className="ps-stagger" data-i="2" style={{ fontSize: 27, margin: 0, color: T.ok, letterSpacing: -0.3 }}>
+            Estás a salvo
+          </h1>
+          <p className="ps-stagger" data-i="2" style={{ fontSize: 22, margin: 0, color: T.tinta }}>
+            El enlace quedó bloqueado y no entregaste ningún dato.
+          </p>
+          <Tarjeta tono="ok" className="ps-stagger" data-i="3">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: T.ok }}>
+              <Users size={30} strokeWidth={2.4} aria-hidden="true" />
+              <span style={{ fontSize: 46, fontWeight: 800, lineHeight: 1.1 }}>
+                <ContadorRed objetivo={protegidas} />
+              </span>
+            </div>
+            <div style={{ fontSize: 21, color: T.tinta, marginTop: 4 }}>
+              personas protegidas por avisos como el tuyo
+            </div>
+            <div style={{ fontSize: 19, color: T.tintaSuave, marginTop: 6, fontStyle: "italic" }}>
+              (cifra de ejemplo para la demo)
+            </div>
+          </Tarjeta>
+          <div className="ps-stagger" data-i="4">
+            <BotonGrande icono={ChevronLeft} onClick={() => ir("inicio", "back")}>
+              Volver al inicio
+            </BotonGrande>
+          </div>
+        </div>
+      </div>
+    ),
+  };
+
+  /* ============================ Render ============================ */
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background:
+          "radial-gradient(1100px 700px at 50% 12%, rgba(16,128,112,0.22), transparent 60%), linear-gradient(170deg, #07161A 0%, #0A2421 55%, #061114 100%)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        padding: "30px 12px 48px",
+        fontFamily: F_DEMO,
+      }}
+    >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Sora:wght@400;600;700&display=swap');
+
+        .ps-boton:focus-visible { outline: 4px solid #34D3B8; outline-offset: 3px; }
+        .ps-boton { transition: transform .14s cubic-bezier(.22,1.2,.36,1), filter .14s ease, box-shadow .14s ease; }
+        .ps-boton:hover { filter: brightness(1.06); transform: translateY(-1px); }
+        .ps-boton:active { transform: scale(0.96); }
+
+        /* Transiciones de pantalla direccionales (curva spring) */
+        @keyframes ps-fwd { from { opacity: 0; transform: translateX(52px) scale(.985); } to { opacity: 1; transform: none; } }
+        @keyframes ps-back { from { opacity: 0; transform: translateX(-52px) scale(.985); } to { opacity: 1; transform: none; } }
+        .ps-screen-fwd  { animation: ps-fwd  .45s cubic-bezier(.22,1.2,.36,1) both; height: 100%; }
+        .ps-screen-back { animation: ps-back .45s cubic-bezier(.22,1.2,.36,1) both; height: 100%; }
+
+        /* Entrada escalonada de elementos dentro de cada pantalla */
+        @keyframes ps-sube { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+        .ps-stagger { animation: ps-sube .5s cubic-bezier(.22,1.2,.36,1) both; }
+        .ps-stagger[data-i="1"] { animation-delay: .05s; }
+        .ps-stagger[data-i="2"] { animation-delay: .13s; }
+        .ps-stagger[data-i="3"] { animation-delay: .21s; }
+        .ps-stagger[data-i="4"] { animation-delay: .29s; }
+        .ps-stagger[data-i="5"] { animation-delay: .37s; }
+
+        /* Llamada entrante: ondas + vibración del ícono */
+        .ps-onda {
+          position: absolute; inset: 0; border-radius: 50%;
+          border: 3px solid rgba(255,255,255,0.55);
+          animation: ps-onda 1.8s ease-out infinite;
+        }
+        @keyframes ps-onda { from { transform: scale(.7); opacity: .9; } to { transform: scale(2.1); opacity: 0; } }
+        @keyframes ps-vibrar {
+          0%, 100% { transform: rotate(0); }
+          10% { transform: rotate(-10deg); } 20% { transform: rotate(8deg); }
+          30% { transform: rotate(-6deg); } 40% { transform: rotate(4deg); }
+          50% { transform: rotate(0); }
+        }
+        .ps-vibrar { animation: ps-vibrar 1.4s ease-in-out infinite; }
+
+        /* Momento de bloqueo: pantalla completa + escudo que se dibuja */
+        .ps-bloqueo {
+          height: 100%;
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          background: radial-gradient(420px 420px at 50% 38%, rgba(36,196,160,0.35), transparent 70%),
+                      linear-gradient(170deg, #0A3A33 0%, #06251F 100%);
+          color: #FFF; text-align: center; padding: 24px;
+          animation: ps-fundido .35s ease both;
+        }
+        @keyframes ps-fundido { from { opacity: 0; } to { opacity: 1; } }
+        .ps-draw-escudo {
+          stroke-dasharray: 330; stroke-dashoffset: 330;
+          animation: ps-trazo .8s ease-out forwards;
+        }
+        .ps-draw-check {
+          stroke-dasharray: 70; stroke-dashoffset: 70;
+          animation: ps-trazo .45s ease-out .75s forwards;
+        }
+        @keyframes ps-trazo { to { stroke-dashoffset: 0; } }
+        .ps-bloqueo-texto { opacity: 0; animation: ps-sube .5s cubic-bezier(.22,1.2,.36,1) 1.05s both; }
+
+        /* Pop del check de éxito */
+        @keyframes ps-pop { 0% { opacity: 0; transform: scale(.4); } 70% { transform: scale(1.12); } 100% { opacity: 1; transform: scale(1); } }
+        .ps-pop { animation: ps-pop .55s cubic-bezier(.22,1.2,.36,1) both; display: inline-flex; }
+
+        /* Avión de mensaje enviado */
+        @keyframes ps-volar {
+          0% { opacity: 0; transform: translate(-26px, 22px) rotate(-14deg) scale(.8); }
+          60% { opacity: 1; transform: translate(6px, -6px) rotate(4deg) scale(1.05); }
+          100% { opacity: 1; transform: none; }
+        }
+        .ps-volar { animation: ps-volar .7s cubic-bezier(.22,1.2,.36,1) both; display: inline-flex; }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ps-screen-fwd, .ps-screen-back, .ps-stagger, .ps-pop, .ps-volar,
+          .ps-vibrar, .ps-onda, .ps-bloqueo, .ps-bloqueo-texto,
+          .ps-draw-escudo, .ps-draw-check { animation: none !important; opacity: 1 !important; }
+          .ps-draw-escudo, .ps-draw-check { stroke-dashoffset: 0 !important; }
+          .ps-boton, .ps-boton:hover, .ps-boton:active { transition: none; transform: none; }
+        }
+      `}</style>
+
+      {/* Encabezado del pitch */}
+      <div style={{ textAlign: "center", marginBottom: 24, color: "#EAF4F1" }}>
+        <div style={{ fontSize: 13, letterSpacing: 4, textTransform: "uppercase", color: "#5FBFAD", fontWeight: 700, marginBottom: 8 }}>
+          Demo interactiva
+        </div>
+        <h1 style={{ fontSize: 32, margin: 0, fontWeight: 700, letterSpacing: -0.8 }}>Pausa Segura</h1>
+        <p style={{ fontSize: 17, margin: "8px 0 0", color: "#9FBDB6", maxWidth: 440 }}>
+          Protección colectiva contra estafas por llamadas y mensajes, diseñada para personas mayores.
+        </p>
+        <button
+          className="ps-boton"
+          onClick={() => setSonido((s) => !s)}
+          aria-pressed={sonido}
+          style={{
+            marginTop: 14,
+            fontFamily: F_DEMO,
+            fontSize: 15,
+            fontWeight: 600,
+            padding: "10px 18px",
+            minHeight: 44,
+            borderRadius: 999,
+            cursor: "pointer",
+            background: sonido ? "linear-gradient(160deg, #14A08C, #0C7264)" : "rgba(255,255,255,0.06)",
+            color: sonido ? "#FFF" : "#BDD6D0",
+            border: sonido ? "1px solid #2BC4AA" : "1px solid rgba(255,255,255,0.16)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          {sonido ? <Volume2 size={20} aria-hidden="true" /> : <VolumeX size={20} aria-hidden="true" />}
+          {sonido ? "Sonido de la demo: activado" : "Sonido de la demo: silenciado"}
+        </button>
+      </div>
+
+      {/* Teléfono */}
+      <div
+        style={{
+          width: 372,
+          height: 700,
+          background: "linear-gradient(160deg, #2A363C, #10181C)",
+          borderRadius: 46,
+          padding: 10,
+          boxShadow:
+            "0 30px 70px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.10), inset 0 1px 1px rgba(255,255,255,0.18)",
+        }}
+        role="region"
+        aria-label="Prototipo de la app Pausa Segura"
+      >
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            background: T.fondo,
+            borderRadius: 36,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            fontFamily: F_APP,
+            color: T.tinta,
+          }}
+        >
+          {/* Barra de estado */}
+          <div
+            style={{
+              background: T.tinta, color: "#FFF", fontSize: 15, padding: "8px 20px",
+              display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative",
+            }}
+            aria-hidden="true"
+          >
+            <span style={{ fontWeight: 700 }}>10:42</span>
+            <span
+              style={{
+                position: "absolute", left: "50%", transform: "translateX(-50%)",
+                width: 14, height: 14, borderRadius: "50%", background: "#000",
+                boxShadow: "inset 0 0 3px rgba(120,160,255,0.5)",
+              }}
+            />
+            <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <svg width="18" height="13" viewBox="0 0 18 13" fill="#FFF" aria-hidden="true">
+                <rect x="0" y="8" width="3" height="5" rx="1" />
+                <rect x="5" y="5" width="3" height="8" rx="1" />
+                <rect x="10" y="2" width="3" height="11" rx="1" />
+                <rect x="15" y="0" width="3" height="13" rx="1" opacity="0.4" />
+              </svg>
+              <svg width="24" height="13" viewBox="0 0 24 13" aria-hidden="true">
+                <rect x="0.5" y="0.5" width="20" height="12" rx="3" fill="none" stroke="#FFF" />
+                <rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#4ADE80" />
+                <rect x="21.5" y="4" width="2" height="5" rx="1" fill="#FFF" />
+              </svg>
+            </span>
+          </div>
+
+          {/* Pantalla actual con transición direccional */}
+          <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+            <div className={dir === "fwd" ? "ps-screen-fwd" : "ps-screen-back"} key={pantalla}>
+              {pantallas[pantalla]}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p style={{ fontSize: 14, color: "#7FA39B", marginTop: 18, maxWidth: 480, textAlign: "center" }}>
+        Prototipo navegable · Cifras de ejemplo · Estado en memoria (sin localStorage)
+      </p>
+    </div>
+  );
+}
+
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(PausaSeguraFlow));
+
+</script>
+</body>
+</html>
