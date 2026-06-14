@@ -431,6 +431,7 @@ function PausaSeguraFlow() {
           <BotonGrande icono={MessageSquare} onClick={() => ir("mensaje-1")}>
             Simular mensaje con enlace falso
           </BotonGrande>
+                  <button onClick={() => window.abrirSimulador && window.abrirSimulador()} aria-label="Abrir simulador de estafas" style={{ marginTop: 2, background: "transparent", border: "1.5px solid #0F6E56", color: "#0F6E56", fontWeight: 700, fontSize: 14, padding: "10px 12px", borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><span aria-hidden="true" style={{ fontSize: 16 }}>🎮</span> Simulador de estafas</button>
         </div>
       </div>
     ),
@@ -1084,6 +1085,68 @@ function PausaSeguraFlow() {
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(PausaSeguraFlow));
 
+</script>
+
+<script>
+(function(){
+var T={teal:'#0F6E56',red:'#D43B2E',green:'#1F9D5F',ink:'#13312A',sub:'#5F6B68',line:'#E3E7E5'};
+var P=[
+ {c:'Mensaje',e:true, t:'"Su cuenta sera BLOQUEADA hoy. Verifique sus datos en el enlace ahora."', x:'Crea urgencia y te manda a un enlace. Tu banco no bloquea asi. Es estafa.'},
+ {c:'Llamada',e:true, t:'"Le hablo del banco. Para protegerlo, digame su clave de 6 digitos."', x:'Tu banco NUNCA te pedira tu clave por telefono. Es estafa.'},
+ {c:'Mensaje',e:false,t:'"Hola pa, te deposite los 20 mil del arriendo. Avisame si llego. Un beso."', x:'Mensaje familiar normal, sin enlaces ni urgencia. Es seguro.'},
+ {c:'Mensaje',e:true, t:'"Ganaste un premio. Paga 9.990 de envio en este link para recibirlo."', x:'Pedir pagar para recibir un premio es una estafa clasica.'},
+ {c:'Llamada',e:false,t:'Te llama tu hija desde su numero guardado, solo para saludarte.', x:'Contacto conocido, sin pedir datos ni dinero. Es seguro.'},
+ {c:'Mensaje',e:true, t:'"SII: tiene una devolucion pendiente. Ingrese su RUT y clave aqui."', x:'Suplanta a una institucion y pide tu clave en un enlace. Es estafa.'}
+];
+var i=0,pts=0,ok=0,racha=0;
+function el(tag,style,html){var e=document.createElement(tag); if(style)e.setAttribute('style',style); if(html!=null)e.innerHTML=html; return e;}
+function cerrar(){var ov=document.getElementById('simovl'); if(ov) ov.remove();}
+function head(card){var h=el('div','display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;'); h.appendChild(el('div','font-size:13px;font-weight:700;color:'+T.teal+';','Simulador de estafas')); var x=el('button','background:transparent;border:none;font-size:24px;line-height:1;color:'+T.sub+';cursor:pointer;','×'); x.onclick=cerrar; h.appendChild(x); card.appendChild(h);}
+function render(){
+ var card=document.getElementById('simcard'); if(!card)return; card.innerHTML=''; head(card);
+ if(i>=P.length){ finish(card); return; }
+ card.appendChild(el('div','font-size:13px;color:'+T.sub+';margin-bottom:10px;','Pregunta '+(i+1)+' de '+P.length+'  ·  Puntos: '+pts+'  ·  Racha: '+racha+' 🔥'));
+ var q=P[i];
+ card.appendChild(el('div','display:inline-block;font-size:12px;font-weight:700;color:'+T.teal+';background:#E1F5EE;padding:4px 10px;border-radius:999px;margin-bottom:10px;', (q.c==='Llamada'?'📞 Llamada':'💬 Mensaje')+' recibido'));
+ card.appendChild(el('div','font-size:18px;line-height:1.45;color:'+T.ink+';background:#F6F8F7;border:1px solid '+T.line+';border-radius:14px;padding:14px;margin-bottom:14px;', q.t));
+ card.appendChild(el('div','font-size:16px;font-weight:700;color:'+T.ink+';margin-bottom:10px;text-align:center;','¿Es seguro o es estafa?'));
+ var bw=el('div','display:flex;gap:10px;');
+ var bE=el('button','flex:1;background:'+T.red+';color:#fff;border:none;border-radius:14px;padding:16px 8px;font-size:17px;font-weight:700;cursor:pointer;','Es estafa');
+ var bS=el('button','flex:1;background:'+T.green+';color:#fff;border:none;border-radius:14px;padding:16px 8px;font-size:17px;font-weight:700;cursor:pointer;','Es seguro');
+ bE.onclick=function(){answer(true);}; bS.onclick=function(){answer(false);};
+ bw.appendChild(bE); bw.appendChild(bS); card.appendChild(bw);
+}
+function answer(saysEstafa){
+ var q=P[i]; var correct=(saysEstafa===q.e); var gained=0;
+ if(correct){ ok++; racha++; gained=10+(racha>=3?5:0); pts+=gained; } else { racha=0; }
+ var card=document.getElementById('simcard'); card.innerHTML=''; head(card);
+ var col= correct? T.green : T.red;
+ card.appendChild(el('div','font-size:22px;font-weight:700;color:'+col+';margin-bottom:6px;', correct? '✓ ¡Correcto!' : '✗ Cuidado'));
+ card.appendChild(el('div','font-size:16px;line-height:1.5;color:'+T.ink+';margin-bottom:8px;', 'Esto era '+(q.e?'una estafa':'seguro')+'. '+q.x));
+ card.appendChild(el('div','font-size:14px;color:'+T.sub+';margin-bottom:14px;', correct? ('+'+gained+' puntos'+(racha>=3?' · racha x'+racha:'')) : 'Aqui puedes equivocarte sin riesgo. Sigue practicando.'));
+ var nb=el('button','width:100%;background:'+T.teal+';color:#fff;border:none;border-radius:14px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;', i+1<P.length?'Siguiente':'Ver resultado');
+ nb.onclick=function(){ i++; render(); }; card.appendChild(nb);
+}
+function finish(card){
+ var nivel = ok>=P.length? 'Experto anti-estafas 🛡️' : ok>=Math.ceil(P.length*0.6)? 'Buen ojo 👍' : 'Sigue practicando 💪';
+ card.appendChild(el('div','text-align:center;font-size:42px;margin:6px 0;','🎉'));
+ card.appendChild(el('div','text-align:center;font-size:20px;font-weight:700;color:'+T.ink+';','Detectaste '+ok+' de '+P.length));
+ card.appendChild(el('div','text-align:center;font-size:16px;color:'+T.teal+';font-weight:700;margin:4px 0 2px;',nivel));
+ card.appendChild(el('div','text-align:center;font-size:15px;color:'+T.sub+';margin-bottom:14px;', pts+' puntos'));
+ var rb=el('button','width:100%;background:'+T.teal+';color:#fff;border:none;border-radius:14px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:8px;','Jugar de nuevo');
+ rb.onclick=function(){ i=0;pts=0;ok=0;racha=0; render(); }; card.appendChild(rb);
+ var cb=el('button','width:100%;background:transparent;border:1.5px solid '+T.line+';color:'+T.ink+';border-radius:14px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;','Cerrar'); cb.onclick=cerrar; card.appendChild(cb);
+}
+window.abrirSimulador=function(){
+ if(document.getElementById('simovl')){document.getElementById('simovl').style.display='flex';return;}
+ i=0;pts=0;ok=0;racha=0;
+ var ov=el('div','position:fixed;inset:0;background:rgba(5,14,16,.72);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Segoe UI,system-ui,sans-serif;'); ov.id='simovl';
+ var card=el('div','background:#fff;width:100%;max-width:360px;max-height:92vh;overflow:auto;border-radius:20px;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.45);'); card.id='simcard';
+ ov.appendChild(card); document.body.appendChild(ov);
+ ov.addEventListener('click',function(e){ if(e.target===ov) cerrar(); });
+ render();
+};
+})();
 </script>
 </body>
 </html>
